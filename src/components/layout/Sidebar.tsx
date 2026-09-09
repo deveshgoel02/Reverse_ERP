@@ -46,11 +46,19 @@ const NAV_SECTIONS: { label: string; items: { href: string; label: string }[] }[
   },
 ];
 
-export function Sidebar({ businessName }: { businessName: string }) {
+export function Sidebar({
+  businessName,
+  onNavigate,
+}: {
+  businessName: string;
+  // Called when a nav link is clicked, so the mobile drawer (AppShell)
+  // can close itself. Desktop's always-visible sidebar ignores it.
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-surface px-3 py-4">
+    <nav className="flex h-full w-64 shrink-0 flex-col overflow-y-auto border-r border-border bg-surface px-3 py-4 md:w-56">
       <div className="mb-6 px-2">
         <p className="truncate text-sm font-semibold text-text">{businessName}</p>
         <p className="text-xs text-text-muted">Inventory Intelligence</p>
@@ -66,6 +74,7 @@ export function Sidebar({ businessName }: { businessName: string }) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onNavigate}
                 className={`block rounded-lg px-2 py-1.5 text-sm ${
                   active ? "bg-primary/10 font-medium text-primary" : "text-text hover:bg-bg"
                 }`}

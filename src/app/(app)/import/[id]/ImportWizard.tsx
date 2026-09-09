@@ -160,7 +160,7 @@ export function ImportWizard({
 
       {step === "preview" && validation && (
         <>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Card padding="p-4">
               <p className="text-xs text-text-muted">Valid</p>
               <p className="text-2xl font-semibold text-[var(--status-healthy-text)]">{validation.validCount}</p>
