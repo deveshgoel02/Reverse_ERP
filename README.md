@@ -66,7 +66,26 @@ real browser session against seeded data.
   owner-configurable, not hard-coded.
 - **Executive dashboard** — answers the 7 questions the spec calls out:
   how much stock, what's stuck, what's selling fastest/slowest, what needs
-  attention today, what to order more/less of.
+  attention today, what to order more/less of. Includes a 12-month sales
+  trend line chart and an inventory-value-by-brand bar chart (Recharts),
+  built per the dataviz skill's validated palette and mark specs.
+- **Scheduled recompute** — the intelligence pipeline re-runs automatically
+  for every business on an interval (`src/instrumentation.ts`, default
+  every 6 hours) even with no new imports/transactions, so stock aging and
+  alerts stay current purely from time passing. A secret-protected HTTP
+  endpoint (`POST /api/cron/recompute`) is also available for serverless
+  deployments where an external scheduler (Vercel Cron, GitHub Actions,
+  etc.) is a better fit than an in-process interval.
+- **Manual sale/purchase entry** — `/sales/new` and `/purchases/new`, with
+  dynamic multi-line-item invoices, live price pre-fill from the SKU
+  master, and the same movement-ledger/audit-log guarantees as the bulk
+  import path (they share the underlying creation logic).
+- **Multi-tenant signup** — `/signup` creates a brand-new, fully isolated
+  business + owner account (proving `businessId` scoping is real, not
+  aspirational — verified in a live browser session: a second tenant sees
+  zero of Shoe Xpress's data). Shoe Xpress is the first tenant, not a
+  hardcoded assumption — the sidebar/dashboard show each tenant's own
+  business name.
 
 ## What's not built (honest limitations)
 
@@ -74,19 +93,25 @@ real browser session against seeded data.
   synchronously; fine at thousands-of-rows scale, would need work before
   tens of thousands.
 - No multi-warehouse/location tracking.
-- No scheduled (e.g. nightly) recompute — the intelligence pipeline runs
-  after imports and during seeding, not on a timer.
+- The in-process scheduler only helps a long-running Node process
+  (`next start` on a VM/container) — on serverless platforms use the
+  `/api/cron/recompute` HTTP endpoint with an external scheduler instead
+  (both are implemented; pick whichever matches your deployment).
 - No WhatsApp/Tally/POS/barcode integrations (architecture is modular
   enough to add them later, per spec Module 27, but none exist yet).
-- Minimal manual sale/purchase entry forms — the primary path for getting
-  transaction data in is the import wizard, matching the reverse-ERP
-  philosophy; dedicated one-off manual-entry forms aren't built.
 - The optional Claude-powered copilot phrasing layer hasn't been
   exercised against a live API key in this environment (no network access
   during development) — the code path has a tested, always-working
   fallback, but treat the LLM call itself as unverified.
 - No PDF export (CSV only) — see "Reports" above.
 - Costing is weighted-average, not FIFO/lot-tracked (see `docs/DATA_MODEL.md`).
+- Multi-tenancy is one-business-per-user (a `User` belongs to exactly one
+  `Business`); there's no membership model for one login to access
+  multiple businesses.
+- PostgreSQL: dependencies are pre-installed and the exact switch-over code
+  is documented below, but not run against a live Postgres instance in
+  this environment (no server/Docker available while building) — see
+  "Switching to PostgreSQL".
 
 ## Tech stack, and why
 
@@ -97,7 +122,7 @@ real browser session against seeded data.
 | Prisma 7 (driver-adapter based) | Mature ORM; Prisma 7 changed how datasource config works (`prisma.config.ts` + a driver adapter in `src/lib/db.ts`) — see the comments in `prisma.config.ts` if this looks unfamiliar. |
 | Zod | Runtime validation, and the source of truth for every "enum" (see `src/lib/enums.ts`) since SQLite doesn't support native enums. |
 | Tailwind CSS v4 | Utility-first styling, no heavy component library dependency. |
-| Recharts | Installed for future chart work (not yet used in a page). |
+| Recharts | Dashboard sales-trend and brand-value charts. |
 | ExcelJS + PapaParse | XLSX/CSV parsing. **Not** the `xlsx` (SheetJS) npm package — it has unpatched prototype-pollution and ReDoS CVEs on the npm registry, which matters directly here since this app parses arbitrary user-uploaded files. |
 | bcryptjs + a custom HMAC session cookie (Web Crypto API) | No NextAuth — a hand-rolled, small, fully-understood auth path avoids pulling in a library with version-compatibility uncertainty against a very new Next.js major version, and the requirements (single-tenant-per-login, simple roles) don't need NextAuth's provider ecosystem. The session implementation uses `crypto.subtle` (Web Crypto) rather than `node:crypto` so the same code works in both the Node runtime and Next's Edge middleware. |
 | Vitest | Fast, native ESM/TS support, no config ceremony. |
@@ -115,7 +140,8 @@ npm run dev
 Open http://localhost:3000 — you'll be redirected to `/login`.
 
 **Demo login:** `dhruvgoel01@gmail.com` / `ShoeXpress@2026` (or whatever
-`SEED_OWNER_EMAIL`/`SEED_OWNER_PASSWORD` were set to before seeding).
+`SEED_OWNER_EMAIL`/`SEED_OWNER_PASSWORD` were set to before seeding). Or
+create a brand-new, empty business at `/signup`.
 
 ### Environment variables
 
@@ -124,19 +150,46 @@ See `.env.example`. `DATABASE_URL` and `AUTH_SECRET` are required;
 
 ### Switching to PostgreSQL
 
+Prisma bakes one SQL dialect into the generated client at `prisma generate`
+time (set by `schema.prisma`'s `datasource.provider`) — there's no runtime
+"detect the DB and pick a dialect" trick, so this is a deliberate one-time
+switch, not a config flag. `@prisma/adapter-pg` and `pg` are already
+installed (`package.json`) so step 3 below is copy-paste, not a new
+install.
+
 1. In `prisma/schema.prisma`, change `provider = "sqlite"` to
    `provider = "postgresql"` in the `datasource db` block.
-2. Set `DATABASE_URL` to a Postgres connection string.
-3. In `src/lib/db.ts`, swap `@prisma/adapter-better-sqlite3` for
-   `@prisma/adapter-pg` (`npm install @prisma/adapter-pg pg`) and update
-   `createClient()` to construct that adapter with the connection string
-   instead of a file path.
+2. Set `DATABASE_URL` to a Postgres connection string (e.g.
+   `postgresql://user:password@host:5432/shoexpress`).
+3. Replace `src/lib/db.ts`'s `createClient()` with:
+
+   ```ts
+   import { PrismaClient } from "@prisma/client";
+   import { PrismaPg } from "@prisma/adapter-pg";
+
+   function createClient() {
+     const connectionString = process.env.DATABASE_URL;
+     if (!connectionString) throw new Error("DATABASE_URL is not set.");
+     const adapter = new PrismaPg({ connectionString });
+     return new PrismaClient({ adapter });
+   }
+   ```
+
+   (This is the same shape as the current SQLite version — only the
+   adapter class and constructor arg change; nothing else in the app
+   references the adapter directly.)
 4. Delete `prisma/migrations/` and run `npx prisma migrate dev --name init`
    against the new database (SQLite and Postgres migration SQL aren't
    interchangeable — this schema was never modified in a way that should
    need it, but a fresh migration is the safe path).
-5. Update `prisma.config.ts`'s `datasource.url` reference if needed (it
-   already reads from `env("DATABASE_URL")`, so this is usually a no-op).
+5. `npx prisma generate` to rebuild the client against the new provider.
+6. Update `scripts/setup-test-db.mjs` similarly if you want the test suite
+   to run against a (throwaway) Postgres database instead of SQLite —
+   not required; SQLite is fine for tests either way.
+
+This hasn't been run against a live Postgres instance in this environment
+(no PostgreSQL server or Docker was available while building) — treat it
+as correct-by-inspection, not verified, until you run it once for real.
 
 ### Running tests
 
@@ -145,10 +198,12 @@ npm test          # runs the full suite once (pretest bootstraps a throwaway pri
 npm run test:watch
 ```
 
-56 tests across 6 files: forecasting engine, stock classification, reorder
+63 tests across 7 files: forecasting engine, stock classification, reorder
 recommendations, inventory ledger recalculation (integration, against a
 real SQLite DB), the import pipeline (mapping/normalization/date-parsing/
-data-quality), and product de-duplication (integration).
+data-quality), product de-duplication (integration), and manual sale/
+purchase entry (integration — ordered-vs-received status transitions,
+cross-business rejection).
 
 ### Other scripts
 

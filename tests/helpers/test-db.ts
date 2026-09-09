@@ -16,3 +16,16 @@ export async function createTestSku(overrides?: { purchasePrice?: number }) {
   });
   return { business, product, sku };
 }
+
+/** A real User row for tests that need a valid actorId (AuditLog.actorId is a real FK to User — a placeholder string like "system" violates it). */
+export async function createTestUser(businessId: string) {
+  return prisma.user.create({
+    data: {
+      businessId,
+      email: `test-${Date.now()}-${Math.random().toString(36).slice(2)}@test.local`,
+      passwordHash: "x",
+      name: "Test User",
+      role: "OWNER",
+    },
+  });
+}

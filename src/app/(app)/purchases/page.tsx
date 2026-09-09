@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { LinkButton } from "@/components/ui/Button";
 import { Table, Thead, Tbody, Tr, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { formatDate, formatINR } from "@/lib/ui/format";
 
@@ -18,9 +19,14 @@ export default async function PurchasesPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold text-text">Purchases</h1>
-        <p className="text-sm text-text-muted">Most recent 100 purchase orders — ordered vs. received.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-text">Purchases</h1>
+          <p className="text-sm text-text-muted">Most recent 100 purchase orders — ordered vs. received.</p>
+        </div>
+        <LinkButton href="/purchases/new" variant="primary">
+          + Create Purchase Order
+        </LinkButton>
       </div>
 
       <Card padding="p-0">

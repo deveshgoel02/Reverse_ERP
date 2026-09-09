@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { Card } from "@/components/ui/Card";
+import { LinkButton } from "@/components/ui/Button";
 import { Table, Thead, Tbody, Tr, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { formatDate, formatINR } from "@/lib/ui/format";
 
@@ -17,9 +18,14 @@ export default async function SalesPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold text-text">Sales</h1>
-        <p className="text-sm text-text-muted">Most recent 100 invoices.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-text">Sales</h1>
+          <p className="text-sm text-text-muted">Most recent 100 invoices.</p>
+        </div>
+        <LinkButton href="/sales/new" variant="primary">
+          + Record Sale
+        </LinkButton>
       </div>
 
       <Card padding="p-0">

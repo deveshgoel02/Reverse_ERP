@@ -89,14 +89,26 @@ second tenant needs no schema change — only a way to create additional
   field; there's no `Location` entity or per-location stock split.
 - **Costing is weighted-average, not FIFO/lot-tracked.** See
   `docs/DATA_MODEL.md`.
-- **No scheduled recompute.** The pipeline runs after imports and via
-  `npm run db:seed`, but nothing re-runs it periodically (e.g. nightly) to
-  pick up newly-stale classifications (aging) even with no new
-  transactions. Wiring a cron trigger to call `runIntelligencePipeline` for
-  every business is the natural next step.
 - **No email/WhatsApp/Tally integrations** — architecture is modular
   enough to add them (Module 27 of the spec), but none are implemented.
-- **Manual sale/purchase entry forms are minimal.** The primary supported
-  path for getting sales/purchase data in is the Import wizard, matching
-  the "reverse ERP" philosophy — dedicated create-forms for one-off manual
-  entries are not yet built.
+- **Multi-tenancy is one-business-per-user.** `/signup` proves the schema's
+  `businessId` isolation is real (see `src/app/api/auth/signup/route.ts`),
+  but there's no membership model for one login to belong to multiple
+  businesses.
+
+## Recompute pipeline: two triggers, pick per deployment
+
+`runIntelligencePipeline` now runs from three places:
+1. After every import commit (`src/app/api/import/[id]/commit/route.ts`)
+   and manual sale/purchase entry (`src/app/api/sales`, `src/app/api/purchases`).
+2. An in-process scheduler (`src/instrumentation.ts`, Next's
+   `register()` hook) that re-runs it for every business on an interval
+   (`RECOMPUTE_INTERVAL_MINUTES`, default 6h) — this only works for a
+   long-running Node process (`next start` on a VM/container); a
+   serverless platform recycles the process between requests, so
+   `setInterval` won't reliably fire there.
+3. An HTTP endpoint (`POST /api/cron/recompute`, secret-protected via
+   `CRON_SECRET`) for exactly that serverless case — point an external
+   scheduler (Vercel Cron, a GitHub Actions scheduled workflow, a
+   crontab `curl`, cron-job.org) at it instead. Both can run
+   simultaneously without harm; the pipeline is idempotent.

@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout"];
+// /api/cron/recompute is NOT session-authenticated — it's called by an
+// external scheduler (or nothing, in-process) and enforces its own
+// CRON_SECRET check inside the route handler instead. See that route's
+// doc comment.
+const PUBLIC_PATHS = ["/login", "/signup", "/api/auth/login", "/api/auth/logout", "/api/auth/signup", "/api/cron/recompute"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { LoginForm } from "./LoginForm";
 
 export default function LoginPage() {
@@ -12,6 +13,12 @@ export default function LoginPage() {
         <Suspense>
           <LoginForm />
         </Suspense>
+        <p className="mt-4 text-center text-sm text-text-muted">
+          New business?{" "}
+          <Link href="/signup" className="text-primary hover:underline">
+            Create an account
+          </Link>
+        </p>
       </div>
     </div>
   );

@@ -46,13 +46,13 @@ const NAV_SECTIONS: { label: string; items: { href: string; label: string }[] }[
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ businessName }: { businessName: string }) {
   const pathname = usePathname();
 
   return (
     <nav className="flex h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-surface px-3 py-4">
       <div className="mb-6 px-2">
-        <p className="text-sm font-semibold text-text">Shoe Xpress</p>
+        <p className="truncate text-sm font-semibold text-text">{businessName}</p>
         <p className="text-xs text-text-muted">Inventory Intelligence</p>
       </div>
       {NAV_SECTIONS.map((section) => (

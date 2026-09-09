@@ -8,6 +8,8 @@ import { Table, Thead, Tbody, Tr, Th, Td, EmptyRow } from "@/components/ui/Table
 import { severityLevel, stockStatusLabel, stockStatusLevel } from "@/lib/ui/status";
 import type { StockStatus } from "@/lib/enums";
 import { formatINR, daysUntil } from "@/lib/ui/format";
+import { SalesTrendChart } from "@/components/charts/SalesTrendChart";
+import { BrandValueChart } from "@/components/charts/BrandValueChart";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -48,6 +50,17 @@ export default async function DashboardPage() {
           level={salesChange === null ? undefined : salesChange >= 0 ? "healthy" : "watch"}
           levelLabel={salesChange === null ? undefined : salesChange >= 0 ? "Up" : "Down"}
         />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Sales Trend" subtitle="Last 12 months" />
+          <SalesTrendChart data={data.salesTrend} />
+        </Card>
+        <Card>
+          <CardHeader title="Inventory Value by Brand" />
+          <BrandValueChart data={data.brandValueBreakdown} />
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

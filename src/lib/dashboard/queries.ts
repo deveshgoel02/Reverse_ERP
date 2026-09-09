@@ -19,6 +19,8 @@ export async function getDashboardData(businessId: string) {
     upcomingDeadlines,
     salesLast30,
     salesPrior30,
+    salesTrend,
+    brandValueBreakdown,
   ] = await Promise.all([
     getTotals(businessId),
     getStatusCounts(businessId),
@@ -30,6 +32,8 @@ export async function getDashboardData(businessId: string) {
     getUpcomingDeadlines(businessId),
     getSalesValueSince(businessId, 30),
     getSalesValueSince(businessId, 60, 30),
+    getMonthlySalesTrend(businessId, 12),
+    getBrandValueBreakdown(businessId),
   ]);
 
   return {
@@ -43,7 +47,54 @@ export async function getDashboardData(businessId: string) {
     upcomingDeadlines,
     salesLast30,
     salesPrior30,
+    salesTrend,
+    brandValueBreakdown,
   };
+}
+
+/** Total sale value per calendar month, oldest first — for the dashboard trend chart. Only includes months that actually have data. */
+async function getMonthlySalesTrend(businessId: string, monthsBack: number): Promise<{ month: string; value: number }[]> {
+  const since = new Date();
+  since.setMonth(since.getMonth() - monthsBack + 1);
+  since.setDate(1);
+  since.setHours(0, 0, 0, 0);
+
+  const items = await prisma.saleItem.findMany({
+    where: { sale: { businessId, saleDate: { gte: since } } },
+    select: { totalAmount: true, sale: { select: { saleDate: true } } },
+  });
+
+  const byMonth = new Map<string, number>();
+  for (const item of items) {
+    const d = item.sale.saleDate;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    byMonth.set(key, (byMonth.get(key) ?? 0) + Number(item.totalAmount));
+  }
+
+  // Zero-fill months with no sales so the trend line doesn't skip gaps — this is a display
+  // convenience only; it's never treated as real data (no forecast/analytics function reads this).
+  const result: { month: string; value: number }[] = [];
+  const cursor = new Date(since);
+  for (let i = 0; i < monthsBack; i++) {
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+    const label = cursor.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+    result.push({ month: label, value: Math.round(byMonth.get(key) ?? 0) });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return result;
+}
+
+async function getBrandValueBreakdown(businessId: string): Promise<{ brand: string; value: number }[]> {
+  const brands = await prisma.brand.findMany({
+    where: { businessId },
+    include: { products: { include: { skus: { include: { inventory: true } } } } },
+  });
+  return brands
+    .map((b) => ({
+      brand: b.name,
+      value: Math.round(b.products.flatMap((p) => p.skus).reduce((sum, s) => sum + (s.inventory ? Number(s.inventory.inventoryValue) : 0), 0)),
+    }))
+    .sort((a, b) => b.value - a.value);
 }
 
 async function getTotals(businessId: string) {
