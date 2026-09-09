@@ -1,0 +1,554 @@
+// Shoe Xpress — Reverse ERP / AI Inventory Intelligence Platform
+// Database schema.
+//
+// PROVIDER NOTE:
+// This schema targets SQLite for local development because no PostgreSQL
+// server or Docker was available in the build environment. The schema is
+// written to be portable to PostgreSQL with a one-line provider change:
+//   - No native Prisma `enum` types are used (SQLite has no real enum
+//     support). Status/type fields are `String`, validated at the
+//     application boundary with Zod (see src/lib/enums.ts). This also
+//     means adding a new status value never requires a migration.
+//   - No Postgres-only column types (arrays, jsonb-specific operators).
+//     JSON blobs use Prisma's `Json` type, which both providers support.
+//   - Decimal is used for money; Int for quantities.
+// To move to production Postgres: change `provider = "sqlite"` below to
+// `"postgresql"`, point DATABASE_URL at the Postgres instance, and re-run
+// `npx prisma migrate dev`. See README.md "Switching to PostgreSQL".
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// TENANCY / AUTH
+// ---------------------------------------------------------------------------
+
+/// A business using the platform. Shoe Xpress is the first tenant; the
+/// platform is architected so additional businesses could be onboarded later.
+model Business {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users            User[]
+  brands           Brand[]
+  categories       Category[]
+  suppliers        Supplier[]
+  customers        Customer[]
+  products         Product[]
+  skus             Sku[]
+  purchases        Purchase[]
+  sales            Sale[]
+  imports          Import[]
+  alerts           Alert[]
+  forecasts        Forecast[]
+  recommendations  Recommendation[]
+  auditLogs        AuditLog[]
+  settings         Setting[]
+  stockDeadlines   StockDeadline[]
+  dataQualityIssues DataQualityIssue[]
+  matchSuggestions ProductMatchSuggestion[]
+}
+
+/// Roles are intentionally simple strings validated by Zod (see src/lib/enums.ts):
+/// OWNER, MANAGER, STAFF, VIEWER.
+model User {
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id])
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("STAFF")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs        AuditLog[]
+  decidedRecs      Recommendation[] @relation("DecidedBy")
+  importsUploaded  Import[]
+  dismissedAlerts  Alert[]          @relation("DismissedBy")
+
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// CATALOG
+// ---------------------------------------------------------------------------
+
+model Brand {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  name       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  products Product[]
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
+/// Self-referencing to support category > subcategory.
+model Category {
+  id         String    @id @default(cuid())
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id])
+  name       String
+  parentId   String?
+  parent     Category? @relation("CategoryToSub", fields: [parentId], references: [id])
+  children   Category[] @relation("CategoryToSub")
+  createdAt  DateTime  @default(now())
+
+  products Product[]
+
+  @@unique([businessId, parentId, name])
+  @@index([businessId])
+}
+
+model Supplier {
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id])
+  name         String
+  contactName  String?
+  phone        String?
+  email        String?
+  address      String?
+  leadTimeDays Int?     // typical days between purchase order and receipt
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  purchases Purchase[]
+  products  Product[]
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
+model Customer {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  name       String
+  phone      String?
+  email      String?
+  address    String?
+  city       String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sales Sale[]
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
+/// Product master. A product groups SKUs (size/colour variants).
+model Product {
+  id           String    @id @default(cuid())
+  businessId   String
+  business     Business  @relation(fields: [businessId], references: [id])
+  name         String
+  brandId      String?
+  brand        Brand?    @relation(fields: [brandId], references: [id])
+  categoryId   String?
+  category     Category? @relation(fields: [categoryId], references: [id])
+  gender       String?   // MEN, WOMEN, UNISEX, KIDS
+  supplierId   String?
+  supplier     Supplier? @relation(fields: [supplierId], references: [id])
+  status       String    @default("ACTIVE") // ACTIVE, DISCONTINUED, MERGED
+  mergedIntoId String?   // if MERGED, points at the surviving product
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  skus Sku[]
+
+  @@index([businessId])
+  @@index([businessId, brandId])
+  @@index([businessId, name])
+}
+
+/// A concrete sellable unit: product + size + colour = SKU. This is the
+/// primary unit of inventory, sales, purchase, forecast and recommendation.
+model Sku {
+  id            String   @id @default(cuid())
+  businessId    String
+  business      Business @relation(fields: [businessId], references: [id])
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  code          String   // SKU code, e.g. "ADI-CAMP-00S-BLK-9"
+  size          String?
+  color         String?
+  purchasePrice Decimal? // last/standard cost
+  sellingPrice  Decimal? // standard selling price
+  mrp           Decimal?
+  reorderPoint  Int?     // manual override; else computed by recommendation engine
+  minOrderQty   Int?
+  status        String   @default("ACTIVE") // ACTIVE, DISCONTINUED, MERGED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  inventory        Inventory?
+  movements        InventoryMovement[]
+  purchaseItems    PurchaseItem[]
+  saleItems        SaleItem[]
+  stockDeadlines   StockDeadline[]
+  forecasts        Forecast[]
+  recommendations  Recommendation[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+  @@index([businessId, productId])
+}
+
+// ---------------------------------------------------------------------------
+// INVENTORY (deterministic, ledger-backed)
+// ---------------------------------------------------------------------------
+
+/// Cached current-state balance per SKU, always derivable by replaying
+/// InventoryMovement rows. Recomputed by src/lib/inventory/recalc.ts —
+/// never hand-edited except through a recorded ADJUSTMENT movement.
+model Inventory {
+  id               String   @id @default(cuid())
+  skuId            String   @unique
+  sku              Sku      @relation(fields: [skuId], references: [id])
+  quantityReceived Int      @default(0)
+  quantitySold     Int      @default(0)
+  quantityReturned Int      @default(0)
+  quantityDamaged  Int      @default(0)
+  quantityReserved Int      @default(0)
+  currentQuantity  Int      @default(0)
+  inventoryValue   Decimal  @default(0) // currentQuantity * purchasePrice (or moving avg cost)
+  firstReceivedAt  DateTime?
+  lastMovementAt   DateTime?
+  lastSaleAt       DateTime?
+  stockAgeDays     Int?     // days since firstReceivedAt (of the current lot) — recomputed
+  status           String   @default("HEALTHY") // see src/lib/enums.ts StockStatus
+  updatedAt        DateTime @updatedAt
+}
+
+/// Append-only ledger. Every stock change — purchase receipt, sale, return,
+/// damage, transfer, opening balance, manual adjustment — is one row here.
+/// This is the deterministic source of truth; Inventory is a cache of it.
+model InventoryMovement {
+  id           String   @id @default(cuid())
+  businessId   String
+  skuId        String
+  sku          Sku      @relation(fields: [skuId], references: [id])
+  type         String   // OPENING, PURCHASE_RECEIPT, SALE, RETURN_IN, RETURN_OUT, TRANSFER_IN, TRANSFER_OUT, DAMAGE, ADJUSTMENT
+  quantity     Int      // signed: positive = stock in, negative = stock out
+  unitCost     Decimal?
+  referenceType String? // "Purchase", "Sale", "Import", "Manual"
+  referenceId  String?
+  note         String?
+  occurredAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  createdById  String?
+
+  @@index([businessId])
+  @@index([skuId])
+  @@index([skuId, occurredAt])
+}
+
+/// Owner-assigned deadline / expected movement date for a batch of stock.
+model StockDeadline {
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id])
+  skuId        String
+  sku          Sku      @relation(fields: [skuId], references: [id])
+  quantity     Int      // quantity this deadline applies to
+  deadlineDate DateTime
+  priority     String   @default("NORMAL") // LOW, NORMAL, HIGH
+  status       String   @default("OPEN")   // OPEN, MET, MISSED, CANCELLED
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([skuId])
+  @@index([businessId, deadlineDate])
+}
+
+// ---------------------------------------------------------------------------
+// TRANSACTIONS
+// ---------------------------------------------------------------------------
+
+model Purchase {
+  id                String   @id @default(cuid())
+  businessId        String
+  business          Business @relation(fields: [businessId], references: [id])
+  supplierId        String
+  supplier          Supplier @relation(fields: [supplierId], references: [id])
+  invoiceRef        String?
+  orderDate         DateTime
+  expectedDeliveryDate DateTime?
+  status            String   @default("PENDING") // PENDING, PARTIALLY_RECEIVED, RECEIVED, CANCELLED
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  items PurchaseItem[]
+
+  @@index([businessId])
+  @@index([businessId, orderDate])
+}
+
+model PurchaseItem {
+  id               String   @id @default(cuid())
+  purchaseId       String
+  purchase         Purchase @relation(fields: [purchaseId], references: [id])
+  skuId            String
+  sku              Sku      @relation(fields: [skuId], references: [id])
+  quantityOrdered  Int
+  quantityReceived Int      @default(0)
+  unitCost         Decimal
+
+  @@index([purchaseId])
+  @@index([skuId])
+}
+
+model Sale {
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id])
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id])
+  invoiceRef   String?
+  saleDate     DateTime
+  salesperson  String?
+  location     String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  items SaleItem[]
+
+  @@index([businessId])
+  @@index([businessId, saleDate])
+}
+
+model SaleItem {
+  id           String  @id @default(cuid())
+  saleId       String
+  sale         Sale    @relation(fields: [saleId], references: [id])
+  skuId        String
+  sku          Sku     @relation(fields: [skuId], references: [id])
+  quantity     Int
+  unitPrice    Decimal
+  discount     Decimal @default(0)
+  tax          Decimal @default(0)
+  totalAmount  Decimal
+
+  @@index([saleId])
+  @@index([skuId])
+}
+
+// ---------------------------------------------------------------------------
+// HISTORICAL IMPORT PIPELINE
+// ---------------------------------------------------------------------------
+
+model Import {
+  id               String   @id @default(cuid())
+  businessId       String
+  business         Business @relation(fields: [businessId], references: [id])
+  filename         String
+  fileType         String   // CSV, XLSX
+  entityType       String   // SALES, PURCHASES, INVENTORY, PRODUCTS, CUSTOMERS, SUPPLIERS
+  status           String   @default("UPLOADED") // UPLOADED, MAPPED, VALIDATED, IMPORTED, FAILED
+  columnMapping    Json?    // { sourceColumn: targetField, confidence }
+  totalRows        Int      @default(0)
+  successfulRows   Int      @default(0)
+  rejectedRows     Int      @default(0)
+  warningRows      Int      @default(0)
+  rawFileData      String?  // original file content (base64) preserved for lineage
+  uploadedById     String?
+  uploadedBy       User?    @relation(fields: [uploadedById], references: [id])
+  createdAt        DateTime @default(now())
+  completedAt      DateTime?
+
+  rows ImportRow[]
+  dataQualityIssues DataQualityIssue[]
+
+  @@index([businessId])
+}
+
+/// One row of the raw uploaded file, preserved verbatim (rawData), plus the
+/// outcome of normalization/import. Raw data is never overwritten.
+model ImportRow {
+  id           String   @id @default(cuid())
+  importId     String
+  import       Import   @relation(fields: [importId], references: [id])
+  rowNumber    Int
+  rawData      Json     // original row as { columnName: value }
+  normalizedData Json?  // mapped/normalized record, prior to commit
+  status       String   @default("PENDING") // PENDING, VALID, WARNING, REJECTED, IMPORTED
+  errors       Json?    // string[]
+  warnings     Json?    // string[]
+  createdEntityType String?
+  createdEntityId   String?
+
+  @@index([importId])
+  @@index([importId, status])
+}
+
+model DataQualityIssue {
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id])
+  importId     String?
+  import       Import?  @relation(fields: [importId], references: [id])
+  type         String   // DUPLICATE, MISSING_SKU, MISSING_BRAND, INVALID_DATE, NEGATIVE_QUANTITY, DUPLICATE_INVOICE, INCONSISTENT_NAME, SUSPICIOUS_VALUE, MISSING_PERIOD, OTHER
+  severity     String   @default("MEDIUM") // LOW, MEDIUM, HIGH
+  description  String
+  relatedEntityType String?
+  relatedEntityId   String?
+  status       String   @default("OPEN") // OPEN, RESOLVED, IGNORED
+  createdAt    DateTime @default(now())
+  resolvedAt   DateTime?
+
+  @@index([businessId])
+  @@index([businessId, status])
+}
+
+/// Fuzzy-match candidates for the product normalization layer (Module F).
+/// The owner confirms, merges, or rejects — nothing is auto-merged.
+model ProductMatchSuggestion {
+  id             String   @id @default(cuid())
+  businessId     String
+  business       Business @relation(fields: [businessId], references: [id])
+  productAId     String
+  productBId     String
+  confidence     Float    // 0..1
+  reason         String   // e.g. "normalized name + brand match"
+  status         String   @default("PENDING") // PENDING, CONFIRMED, REJECTED
+  createdAt      DateTime @default(now())
+  decidedAt      DateTime?
+
+  @@index([businessId])
+  @@index([businessId, status])
+}
+
+// ---------------------------------------------------------------------------
+// INTELLIGENCE LAYER
+// ---------------------------------------------------------------------------
+
+model Forecast {
+  id              String   @id @default(cuid())
+  businessId      String
+  business        Business @relation(fields: [businessId], references: [id])
+  skuId           String
+  sku             Sku      @relation(fields: [skuId], references: [id])
+  periodStart     DateTime
+  periodEnd       DateTime
+  method          String   // MOVING_AVERAGE, WEIGHTED_MOVING_AVERAGE, EXPONENTIAL_SMOOTHING, LINEAR_REGRESSION, SEASONAL_NAIVE, INSUFFICIENT_DATA
+  expectedDemand  Float
+  lowerBound      Float
+  upperBound      Float
+  trend           String   // INCREASING, DECREASING, STABLE, SEASONAL, UNKNOWN
+  confidence      String   // HIGH, MEDIUM, LOW
+  inputsJson      Json     // historical points/params used, for explainability
+  generatedAt     DateTime @default(now())
+
+  @@index([businessId])
+  @@index([skuId])
+  @@index([skuId, generatedAt])
+}
+
+model Recommendation {
+  id              String    @id @default(cuid())
+  businessId      String
+  business        Business  @relation(fields: [businessId], references: [id])
+  skuId           String
+  sku             Sku       @relation(fields: [skuId], references: [id])
+  type            String    // ORDER_MORE, ORDER_LESS, MAINTAIN, DO_NOT_ORDER, REVIEW_MANUALLY
+  recommendedQty  Int?
+  reason          String
+  inputsJson      Json      // { currentStock, forecastDemand, leadTimeDays, stockAgeDays, ... }
+  confidence      String    // HIGH, MEDIUM, LOW
+  expectedImpact  String?
+  status          String    @default("PENDING") // PENDING, ACCEPTED, REJECTED, MODIFIED, SUPERSEDED
+  decidedById     String?
+  decidedBy       User?     @relation("DecidedBy", fields: [decidedById], references: [id])
+  decidedAt       DateTime?
+  generatedAt     DateTime  @default(now())
+
+  @@index([businessId])
+  @@index([skuId])
+  @@index([businessId, status])
+}
+
+model Alert {
+  id              String    @id @default(cuid())
+  businessId      String
+  business        Business  @relation(fields: [businessId], references: [id])
+  type            String    // LOW_STOCK, OVERSTOCK, DEAD_STOCK, AGING, DEADLINE_APPROACHING, DEADLINE_MISSED, SALES_DECLINE, SALES_SPIKE, SUPPLIER_DELAY, FORECAST_SHORTAGE, HIGH_EXPOSURE
+  severity        String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  message         String
+  relatedEntityType String? // Sku, Brand, StockDeadline...
+  relatedEntityId   String?
+  status          String    @default("OPEN") // OPEN, ACKNOWLEDGED, DISMISSED
+  dismissedById   String?
+  dismissedBy     User?     @relation("DismissedBy", fields: [dismissedById], references: [id])
+  dismissedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([businessId])
+  @@index([businessId, status])
+  @@index([businessId, type])
+}
+
+/// Generic configurable settings (thresholds for classification, alert
+/// windows, forecasting params) scoped per business, optionally per brand
+/// or category so rules can be overridden narrowly.
+model Setting {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  key        String   // e.g. "slowMovingDays", "deadStockDays", "alertWindowsDays"
+  scopeType  String   @default("BUSINESS") // BUSINESS, BRAND, CATEGORY
+  // brandId/categoryId when scopeType != BUSINESS, else "". Not nullable:
+  // SQLite (and Prisma's compound-unique-key typing) treats NULL specially
+  // in unique constraints, so a sentinel empty string keeps the
+  // (businessId, key, scopeType, scopeId) uniqueness simple and portable.
+  scopeId    String   @default("")
+  value      Json
+  updatedAt  DateTime @updatedAt
+
+  @@unique([businessId, key, scopeType, scopeId])
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  businessId    String
+  business      Business @relation(fields: [businessId], references: [id])
+  actorId       String?
+  actor         User?    @relation(fields: [actorId], references: [id])
+  action        String   // CREATE, UPDATE, DELETE, IMPORT, MERGE, ADJUST, RECOMMENDATION_DECISION, ALERT_DISMISS
+  entityType    String
+  entityId      String
+  previousValue Json?
+  newValue      Json?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@index([businessId])
+  @@index([businessId, entityType, entityId])
+  @@index([businessId, createdAt])
+}
