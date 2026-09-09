@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 export function Topbar({ userName, role }: { userName: string; role: string }) {
   const router = useRouter();
@@ -13,6 +14,7 @@ export function Topbar({ userName, role }: { userName: string; role: string }) {
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-end gap-4 border-b border-border bg-surface px-6">
+      <ThemeToggle />
       <div className="text-right">
         <p className="text-sm font-medium text-text">{userName}</p>
         <p className="text-xs text-text-muted">{role}</p>

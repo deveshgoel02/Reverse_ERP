@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light;
   --bg: #f6f7f9;
   --surface: #ffffff;
   --border: #e2e5ea;
@@ -19,6 +20,55 @@
   --status-critical-text: #b91c1c;
   --status-neutral-bg: #f3f4f6;
   --status-neutral-text: #374151;
+}
+
+/* System preference applies automatically unless the user has explicitly
+   picked a theme (data-theme, set by ThemeToggle + the inline script in
+   the root layout that runs before paint to avoid a flash). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f1115;
+    --surface: #181b21;
+    --border: #2b2f38;
+    --text: #e5e7eb;
+    --text-muted: #9ca3af;
+    --primary: #3b82f6;
+    --primary-hover: #60a5fa;
+
+    --status-healthy-bg: #06342a;
+    --status-healthy-text: #6ee7b7;
+    --status-watch-bg: #452b06;
+    --status-watch-text: #fcd34d;
+    --status-warning-bg: #4a220c;
+    --status-warning-text: #fdba74;
+    --status-critical-bg: #4c1414;
+    --status-critical-text: #fca5a5;
+    --status-neutral-bg: #2b2f38;
+    --status-neutral-text: #d1d5db;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1115;
+  --surface: #181b21;
+  --border: #2b2f38;
+  --text: #e5e7eb;
+  --text-muted: #9ca3af;
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+
+  --status-healthy-bg: #06342a;
+  --status-healthy-text: #6ee7b7;
+  --status-watch-bg: #452b06;
+  --status-watch-text: #fcd34d;
+  --status-warning-bg: #4a220c;
+  --status-warning-text: #fdba74;
+  --status-critical-bg: #4c1414;
+  --status-critical-text: #fca5a5;
+  --status-neutral-bg: #2b2f38;
+  --status-neutral-text: #d1d5db;
 }
 
 @theme inline {
