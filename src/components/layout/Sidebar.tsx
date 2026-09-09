@@ -36,6 +36,13 @@ const NAV_SECTIONS: { label: string; items: { href: string; label: string }[] }[
     ],
   },
   {
+    label: "Sales Team",
+    items: [
+      { href: "/salesmen", label: "Salesmen" },
+      { href: "/allotments", label: "Allotments" },
+    ],
+  },
+  {
     label: "Data",
     items: [
       { href: "/import", label: "Import Data" },

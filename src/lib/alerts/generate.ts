@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/settings/get";
 import { getRecentVelocity } from "@/lib/analytics/aggregate";
+import { getAllotmentProgress } from "@/lib/allotments/progress";
 import type { AlertType, Severity } from "@/lib/enums";
 
 /**
@@ -17,6 +18,7 @@ export async function generateAlertsForBusiness(businessId: string): Promise<num
   created += await supplierDelayAlerts(businessId);
   created += await highExposureAlerts(businessId);
   created += await forecastShortageAlerts(businessId);
+  created += await allotmentDeadlineAlerts(businessId);
   return created;
 }
 
@@ -160,6 +162,71 @@ async function deadlineAlerts(businessId: string): Promise<number> {
           message: `Deadline for ${label} (${d.quantity} units) is in ${daysUntil} day(s).`,
           relatedEntityType: "StockDeadline",
           relatedEntityId: d.id,
+        })
+      )
+        created++;
+    }
+  }
+  return created;
+}
+
+/**
+ * Mirrors deadlineAlerts() above, but for salesman allotments (sales
+ * targets) instead of stock deadlines: auto-marks an allotment MET as soon
+ * as its target is reached (even before the deadline), MISSED once the
+ * deadline passes without reaching it, and raises a DEADLINE_APPROACHING
+ * alert inside the same configurable windows used for stock deadlines.
+ */
+async function allotmentDeadlineAlerts(businessId: string): Promise<number> {
+  const settings = await getSettings(businessId);
+  const allotments = await prisma.allotment.findMany({
+    where: { businessId, status: "OPEN" },
+    include: {
+      salesman: { select: { name: true } },
+      customer: { select: { name: true } },
+      brand: { select: { name: true } },
+    },
+  });
+
+  let created = 0;
+  const now = Date.now();
+  for (const a of allotments) {
+    const progress = await getAllotmentProgress(a);
+    const label = `${a.salesman.name} → ${a.customer.name} (${a.brand.name})`;
+
+    if (progress.remainingQty === 0) {
+      await prisma.allotment.update({ where: { id: a.id }, data: { status: "MET" } });
+      continue;
+    }
+
+    const daysUntil = Math.floor((a.deadlineDate.getTime() - now) / (1000 * 60 * 60 * 24));
+
+    if (daysUntil < 0) {
+      await prisma.allotment.update({ where: { id: a.id }, data: { status: "MISSED" } });
+      if (
+        await createIfNotOpen({
+          businessId,
+          type: "DEADLINE_MISSED",
+          severity: "HIGH",
+          message: `Allotment deadline for ${label} was ${Math.abs(daysUntil)} day(s) ago — ${progress.remainingQty} of ${a.targetQuantity} units still short.`,
+          relatedEntityType: "Allotment",
+          relatedEntityId: a.id,
+        })
+      )
+        created++;
+      continue;
+    }
+
+    const windows = settings.deadlineAlertWindowsDays as unknown as number[];
+    if (windows.some((w) => daysUntil <= w)) {
+      if (
+        await createIfNotOpen({
+          businessId,
+          type: "DEADLINE_APPROACHING",
+          severity: daysUntil <= 7 ? "HIGH" : "MEDIUM",
+          message: `Allotment deadline for ${label} is in ${daysUntil} day(s) — ${progress.remainingQty} of ${a.targetQuantity} units still remaining.`,
+          relatedEntityType: "Allotment",
+          relatedEntityId: a.id,
         })
       )
         created++;

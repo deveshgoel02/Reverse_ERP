@@ -20,9 +20,18 @@ interface LineItem {
   tax: number;
 }
 
-export function NewSaleForm({ customers, skus }: { customers: { id: string; name: string }[]; skus: SkuOption[] }) {
+export function NewSaleForm({
+  customers,
+  skus,
+  salesmen,
+}: {
+  customers: { id: string; name: string }[];
+  skus: SkuOption[];
+  salesmen: { id: string; name: string }[];
+}) {
   const router = useRouter();
   const [customerId, setCustomerId] = useState("");
+  const [salesmanId, setSalesmanId] = useState("");
   const [saleDate, setSaleDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [invoiceRef, setInvoiceRef] = useState("");
   const [items, setItems] = useState<LineItem[]>([
@@ -58,7 +67,13 @@ export function NewSaleForm({ customers, skus }: { customers: { id: string; name
       const res = await fetch("/api/sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerId: customerId || undefined, saleDate, invoiceRef: invoiceRef || undefined, items }),
+        body: JSON.stringify({
+          customerId: customerId || undefined,
+          salesmanId: salesmanId || undefined,
+          saleDate,
+          invoiceRef: invoiceRef || undefined,
+          items,
+        }),
       });
       const body = await res.json();
       if (!res.ok) {
@@ -76,7 +91,7 @@ export function NewSaleForm({ customers, skus }: { customers: { id: string; name
     <form onSubmit={onSubmit} className="space-y-4">
       <Card>
         <CardHeader title="Invoice Details" />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-text-muted">Customer</label>
             <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="w-full rounded-lg border border-border px-3 py-1.5 text-sm">
@@ -84,6 +99,17 @@ export function NewSaleForm({ customers, skus }: { customers: { id: string; name
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-text-muted">Salesman</label>
+            <select value={salesmanId} onChange={(e) => setSalesmanId(e.target.value)} className="w-full rounded-lg border border-border px-3 py-1.5 text-sm">
+              <option value="">Unattributed</option>
+              {salesmen.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
                 </option>
               ))}
             </select>

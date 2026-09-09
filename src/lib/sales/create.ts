@@ -7,6 +7,7 @@ export const createSaleSchema = z.object({
   saleDate: z.string().min(1),
   invoiceRef: z.string().optional(),
   salesperson: z.string().optional(),
+  salesmanId: z.string().optional(),
   notes: z.string().optional(),
   items: z
     .array(
@@ -53,6 +54,7 @@ export async function createSale(businessId: string, actorId: string, input: Cre
       invoiceRef: input.invoiceRef || undefined,
       saleDate,
       salesperson: input.salesperson || undefined,
+      salesmanId: input.salesmanId || undefined,
       notes: input.notes || undefined,
       items: { create: items },
     },

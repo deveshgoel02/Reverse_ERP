@@ -49,6 +49,8 @@ model Business {
   stockDeadlines   StockDeadline[]
   dataQualityIssues DataQualityIssue[]
   matchSuggestions ProductMatchSuggestion[]
+  salesmen         Salesman[]
+  allotments       Allotment[]
 }
 
 /// Roles are intentionally simple strings validated by Zod (see src/lib/enums.ts):
@@ -85,7 +87,8 @@ model Brand {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  products Product[]
+  products   Product[]
+  allotments Allotment[]
 
   @@unique([businessId, name])
   @@index([businessId])
@@ -142,7 +145,8 @@ model Customer {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  sales Sale[]
+  sales      Sale[]
+  allotments Allotment[]
 
   @@unique([businessId, name])
   @@index([businessId])
@@ -277,6 +281,59 @@ model StockDeadline {
 }
 
 // ---------------------------------------------------------------------------
+// SALES TEAM
+// ---------------------------------------------------------------------------
+
+/// A salesman/field rep the owner can allot sales targets to. Deliberately
+/// separate from User — a salesman doesn't need a login account, just an
+/// identity to attribute sales and targets to.
+model Salesman {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  name       String
+  phone      String?
+  email      String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sales      Sale[]
+  allotments Allotment[]
+
+  @@index([businessId])
+}
+
+/// Owner-assigned sales target: "sell N units of this brand to this party
+/// by this date, for this incentive." Progress (units sold so far) is
+/// computed live from actual Sale/SaleItem records attributed to this
+/// salesman+customer+brand since the allotment was created — never stored
+/// as a running counter, matching the rest of the app's recompute-from-
+/// ledger philosophy (see src/lib/allotments/progress.ts).
+model Allotment {
+  id              String   @id @default(cuid())
+  businessId      String
+  business        Business @relation(fields: [businessId], references: [id])
+  salesmanId      String
+  salesman        Salesman @relation(fields: [salesmanId], references: [id])
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id])
+  brandId         String
+  brand           Brand    @relation(fields: [brandId], references: [id])
+  targetQuantity  Int
+  incentiveAmount Decimal  @default(0)
+  deadlineDate    DateTime
+  status          String   @default("OPEN") // OPEN, MET, MISSED, CANCELLED
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([salesmanId])
+  @@index([businessId, deadlineDate])
+}
+
+// ---------------------------------------------------------------------------
 // TRANSACTIONS
 // ---------------------------------------------------------------------------
 
@@ -323,6 +380,8 @@ model Sale {
   invoiceRef   String?
   saleDate     DateTime
   salesperson  String?
+  salesmanId   String?
+  salesman     Salesman? @relation(fields: [salesmanId], references: [id])
   location     String?
   notes        String?
   createdAt    DateTime @default(now())
@@ -332,6 +391,7 @@ model Sale {
 
   @@index([businessId])
   @@index([businessId, saleDate])
+  @@index([salesmanId])
 }
 
 model SaleItem {
@@ -491,7 +551,7 @@ model Alert {
   type            String    // LOW_STOCK, OVERSTOCK, DEAD_STOCK, AGING, DEADLINE_APPROACHING, DEADLINE_MISSED, SALES_DECLINE, SALES_SPIKE, SUPPLIER_DELAY, FORECAST_SHORTAGE, HIGH_EXPOSURE
   severity        String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
   message         String
-  relatedEntityType String? // Sku, Brand, StockDeadline...
+  relatedEntityType String? // Sku, Brand, StockDeadline, Allotment...
   relatedEntityId   String?
   status          String    @default("OPEN") // OPEN, ACKNOWLEDGED, DISMISSED
   dismissedById   String?

@@ -6,7 +6,7 @@ export default async function NewSalePage() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const [customers, skus] = await Promise.all([
+  const [customers, skus, salesmen] = await Promise.all([
     prisma.customer.findMany({ where: { businessId: user.businessId }, orderBy: { name: "asc" } }),
     prisma.sku.findMany({
       where: { businessId: user.businessId, status: "ACTIVE" },
@@ -14,6 +14,7 @@ export default async function NewSalePage() {
       orderBy: { code: "asc" },
       take: 500,
     }),
+    prisma.salesman.findMany({ where: { businessId: user.businessId, active: true }, orderBy: { name: "asc" } }),
   ]);
 
   return (
@@ -25,6 +26,7 @@ export default async function NewSalePage() {
       <NewSaleForm
         customers={customers.map((c) => ({ id: c.id, name: c.name }))}
         skus={skus.map((s) => ({ id: s.id, label: `${s.product.name} (${s.code})`, sellingPrice: s.sellingPrice ? Number(s.sellingPrice) : 0 }))}
+        salesmen={salesmen.map((s) => ({ id: s.id, name: s.name }))}
       />
     </div>
   );
