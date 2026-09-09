@@ -14,7 +14,11 @@ export async function proxy(request: NextRequest) {
   const isPublic =
     PUBLIC_PATHS.some((p) => pathname === p) ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon");
+    pathname.startsWith("/favicon") ||
+    pathname === "/manifest.webmanifest" ||
+    pathname.startsWith("/icons/") ||
+    pathname.startsWith("/downloads/") ||
+    pathname.startsWith("/.well-known/");
 
   if (isPublic) return NextResponse.next();
 
