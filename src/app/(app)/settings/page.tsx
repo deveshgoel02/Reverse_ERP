@@ -3,6 +3,7 @@ import { getSettings } from "@/lib/settings/get";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { saveSettings } from "./actions";
+import { ProfileForm, PasswordForm } from "./AccountSettings";
 
 const FIELDS: { key: string; label: string; help: string }[] = [
   { key: "slowMovingDays", label: "Slow Moving (days since last sale)", help: "Beyond this, a SKU is flagged Slow Moving." },
@@ -29,6 +30,9 @@ export default async function SettingsPage() {
           Every threshold the classification, alert, and recommendation engines use — tune them for your business instead of relying on hard-coded defaults.
         </p>
       </div>
+
+      <ProfileForm name={user.name} email={user.email} />
+      <PasswordForm />
 
       <Card>
         <CardHeader title="Business-Wide Thresholds" />

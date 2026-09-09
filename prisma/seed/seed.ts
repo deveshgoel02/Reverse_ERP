@@ -34,14 +34,14 @@ async function main() {
 
   const business = await prisma.business.create({ data: { name: "Shoe Xpress" } });
 
-  const ownerEmail = process.env.SEED_OWNER_EMAIL ?? "dhruvgoel01@gmail.com";
+  const ownerEmail = process.env.SEED_OWNER_EMAIL ?? "vrekhagoel@gmail.com";
   const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "ShoeXpress@2026";
   await prisma.user.create({
     data: {
       businessId: business.id,
       email: ownerEmail.toLowerCase(),
       passwordHash: await hashPassword(ownerPassword),
-      name: "Dhruv Goel",
+      name: "Vivek Goel",
       role: "OWNER",
     },
   });

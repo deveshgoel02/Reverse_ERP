@@ -135,7 +135,7 @@ npm run dev
 
 Open http://localhost:3000 — you'll be redirected to `/login`.
 
-**Demo login:** `dhruvgoel01@gmail.com` / `ShoeXpress@2026` (or whatever
+**Demo login:** `vrekhagoel@gmail.com` / `ShoeXpress@2026` (or whatever
 `SEED_OWNER_EMAIL`/`SEED_OWNER_PASSWORD` were set to before seeding). Or
 create a brand-new, empty business at `/signup`.
 
