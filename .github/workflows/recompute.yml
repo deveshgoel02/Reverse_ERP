@@ -1,0 +1,29 @@
+name: Scheduled recompute
+
+# Free alternative to a paid Render Cron Job (see docs/ARCHITECTURE.md
+# "Recompute pipeline"). Calls the deployed app's POST /api/cron/recompute
+# on a schedule so stock aging/alerts/forecasts stay fresh even for SKUs
+# with zero new transactions — see that route's doc comment for why this
+# is needed at all (the in-process scheduler in src/instrumentation.ts
+# doesn't work on Vercel's serverless runtime).
+on:
+  schedule:
+    # Every 6 hours, matching RECOMPUTE_INTERVAL_MINUTES=360 used elsewhere.
+    - cron: "0 */6 * * *"
+  workflow_dispatch: {} # allows manually triggering a run from the Actions tab
+
+jobs:
+  recompute:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call recompute endpoint
+        run: |
+          response=$(curl -s -o /tmp/response.json -w "%{http_code}" -X POST \
+            "https://shoe-xpress-erp.vercel.app/api/cron/recompute" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $response"
+          cat /tmp/response.json
+          if [ "$response" -ne 200 ]; then
+            echo "Recompute call failed with status $response"
+            exit 1
+          fi

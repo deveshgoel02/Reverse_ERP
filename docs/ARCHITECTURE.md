@@ -109,6 +109,9 @@ second tenant needs no schema change — only a way to create additional
    `setInterval` won't reliably fire there.
 3. An HTTP endpoint (`POST /api/cron/recompute`, secret-protected via
    `CRON_SECRET`) for exactly that serverless case — point an external
-   scheduler (Vercel Cron, a GitHub Actions scheduled workflow, a
-   crontab `curl`, cron-job.org) at it instead. Both can run
+   scheduler at it. This deployment uses `.github/workflows/recompute.yml`,
+   a GitHub Actions scheduled workflow (every 6h + manual
+   `workflow_dispatch`), chosen over a paid Render Cron Job because it's
+   free and needs no third-party account. A Vercel Cron, crontab `curl`,
+   or cron-job.org would work identically. All of these can run
    simultaneously without harm; the pipeline is idempotent.

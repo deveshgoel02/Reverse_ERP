@@ -241,29 +241,45 @@ optional LLM rephrasing second, and the LLM can never touch a number.
 
 ## Deployment
 
-**Vercel (app) + Neon (database) + Render (cron only).** This is a single
-Next.js project — pages and API routes together — so there's no separate
-frontend/backend deploy; Vercel is the native platform for the whole thing.
+**Live at https://shoe-xpress-erp.vercel.app** — Vercel (app) + Neon
+(database) + a scheduled GitHub Actions workflow (recompute heartbeat).
+This is a single Next.js project — pages and API routes together — so
+there's no separate frontend/backend deploy; Vercel is the native platform
+for the whole thing.
 
 - **Neon** — the database, see "Database (PostgreSQL on Neon)" above.
-  Production uses its own database, separate from dev/test.
+  Production uses `shoexpress_prod`, its own database, separate from
+  dev/test. Note: the Neon *project* this app lives in ("shoexpress") had
+  a pre-existing, unrelated, populated database (`neondb`) under it from
+  another project reusing the same Neon project — that database was left
+  untouched; `shoexpress_prod`/`_dev`/`_test` were created fresh
+  specifically for this app.
 - **Vercel** — imports the GitHub repo, builds and serves the full app
-  (`next build` / `next start`-equivalent, all `/api/*` routes as
-  serverless functions). Env vars set in the Vercel project: `DATABASE_URL`
-  (Neon production connection string), `AUTH_SECRET`, `CRON_SECRET`, and
-  optionally `ANTHROPIC_API_KEY`. `DISABLE_RECOMPUTE_SCHEDULER=true` is set
-  here too — Vercel's serverless functions don't keep a process alive
-  between requests, so the in-process scheduler (`src/instrumentation.ts`)
-  can't fire reliably there; the HTTP cron endpoint is used instead (next
-  bullet).
-- **Render** — runs no application code. A single Cron Job resource calls
-  the deployed app's `POST /api/cron/recompute` on a schedule
-  (`x-cron-secret` header set to the same `CRON_SECRET`), which is what
-  keeps stock aging/alerts/forecasts fresh in production.
+  (`next build`, all `/api/*` routes as serverless functions). Env vars
+  set in the Vercel project: `DATABASE_URL` (Neon production connection
+  string), `AUTH_SECRET`, `CRON_SECRET`, and optionally
+  `ANTHROPIC_API_KEY`. `DISABLE_RECOMPUTE_SCHEDULER=true` is set here too
+  — Vercel's serverless functions don't keep a process alive between
+  requests, so the in-process scheduler (`src/instrumentation.ts`) can't
+  fire reliably there; the scheduled workflow below is used instead.
+  Requires a `postinstall: prisma generate` script (see `package.json`) —
+  without it the build fails on a fresh `npm install` with a
+  `.prisma/client/default` module-not-found error, since the generated
+  client is (correctly) never committed.
+- **`.github/workflows/recompute.yml`** — a GitHub Actions scheduled
+  workflow (every 6 hours + manual `workflow_dispatch`) that calls the
+  deployed app's `POST /api/cron/recompute` with the `CRON_SECRET` repo
+  secret in the `x-cron-secret` header. Free (no third-party account, no
+  payment method needed) — chosen over a paid Render Cron Job for exactly
+  that reason. This is what keeps stock aging/alerts/forecasts fresh for
+  SKUs that go quiet (no new sales/purchases) — everything else recomputes
+  automatically on import/sale/purchase regardless of this workflow; see
+  `docs/ARCHITECTURE.md` "Recompute pipeline" for what breaks (nothing
+  critical) if it's ever disabled.
 
 For a different deployment shape (e.g. a single long-running server instead
-of Vercel + a separate cron): set `AUTH_SECRET`/`DATABASE_URL`, leave
+of Vercel): set `AUTH_SECRET`/`DATABASE_URL`, leave
 `DISABLE_RECOMPUTE_SCHEDULER` unset, and run `npm run build && npm start`
 behind HTTPS — the in-process scheduler handles recompute on its own then,
-and the Render Cron Job becomes unnecessary. Nothing in the codebase is
-tied to Vercel specifically.
+and the scheduled workflow becomes unnecessary (though harmless to leave
+running). Nothing in the codebase is tied to Vercel specifically.
