@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.shoexpress.app",
+      "sha256_cert_fingerprints": [
+        "F2:CF:9D:B0:FD:3F:56:BD:36:56:0E:F7:5E:4C:D9:1B:AE:A8:98:D1:FA:7A:AF:FA:E3:36:73:DB:0C:05:3A:33"
+      ]
+    }
+  }
+]
