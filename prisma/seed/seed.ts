@@ -10,6 +10,7 @@
  *
  * Safe to re-run: exits early if a Business already exists.
  */
+import "dotenv/config";
 import { prisma } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { recalcInventoryForBusiness } from "@/lib/inventory/recalc";

@@ -1,13 +1,16 @@
-// Cross-platform test DB bootstrap: applies migrations to a dedicated
-// prisma/test.db file so integration tests never touch the dev database.
+// Applies migrations to the dedicated Neon test database (shoexpress_test)
+// so integration tests never touch dev/production data. Requires
+// TEST_DATABASE_URL to be set (see .env.example).
+import "dotenv/config";
 import { execSync } from "node:child_process";
-import { existsSync, unlinkSync } from "node:fs";
-import path from "node:path";
 
-const testDbPath = path.join(process.cwd(), "prisma", "test.db");
-if (existsSync(testDbPath)) unlinkSync(testDbPath);
+const testDatabaseUrl = process.env.TEST_DATABASE_URL;
+if (!testDatabaseUrl) {
+  console.error("TEST_DATABASE_URL is not set — see .env.example.");
+  process.exit(1);
+}
 
 execSync("npx prisma migrate deploy", {
   stdio: "inherit",
-  env: { ...process.env, DATABASE_URL: "file:./prisma/test.db" },
+  env: { ...process.env, DATABASE_URL: testDatabaseUrl },
 });

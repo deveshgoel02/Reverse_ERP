@@ -108,19 +108,15 @@ real browser session against seeded data.
 - Multi-tenancy is one-business-per-user (a `User` belongs to exactly one
   `Business`); there's no membership model for one login to access
   multiple businesses.
-- PostgreSQL: dependencies are pre-installed and the exact switch-over code
-  is documented below, but not run against a live Postgres instance in
-  this environment (no server/Docker available while building) — see
-  "Switching to PostgreSQL".
 
 ## Tech stack, and why
 
 | Choice | Reasoning |
 |---|---|
 | Next.js 16 (App Router) + React 19 + TypeScript | Spec's stated preference; server components keep data-heavy pages simple. |
-| **SQLite for local dev, PostgreSQL for production** | No PostgreSQL server or Docker was available in the build environment. Rather than ship an untested Postgres schema, the schema was written to be portable (no native enums, no Postgres-only types) and actually run end-to-end against SQLite. See "Switching to PostgreSQL" below. |
+| **PostgreSQL on Neon** | Serverless Postgres with instant branching — dev, test, and production each get their own database on the same Neon project (see "Database (PostgreSQL on Neon)" below), and Neon's Vercel integration keeps `DATABASE_URL` in sync automatically. The schema still avoids native Prisma enums and Postgres-only types (`src/lib/enums.ts` + Zod instead) — a portability habit kept from when this ran on SQLite during early development, not a requirement anymore. |
 | Prisma 7 (driver-adapter based) | Mature ORM; Prisma 7 changed how datasource config works (`prisma.config.ts` + a driver adapter in `src/lib/db.ts`) — see the comments in `prisma.config.ts` if this looks unfamiliar. |
-| Zod | Runtime validation, and the source of truth for every "enum" (see `src/lib/enums.ts`) since SQLite doesn't support native enums. |
+| Zod | Runtime validation, and the source of truth for every "enum" (see `src/lib/enums.ts`) — adding a new status value never needs a migration. |
 | Tailwind CSS v4 | Utility-first styling, no heavy component library dependency. |
 | Recharts | Dashboard sales-trend and brand-value charts. |
 | ExcelJS + PapaParse | XLSX/CSV parsing. **Not** the `xlsx` (SheetJS) npm package — it has unpatched prototype-pollution and ReDoS CVEs on the npm registry, which matters directly here since this app parses arbitrary user-uploaded files. |
@@ -131,8 +127,8 @@ real browser session against seeded data.
 
 ```bash
 npm install
-cp .env.example .env          # already done in this repo; edit AUTH_SECRET for a real deployment
-npx prisma migrate deploy     # applies migrations to prisma dev.db (or run `npm run db:migrate` in dev)
+cp .env.example .env          # already done in this repo — fill in DATABASE_URL/TEST_DATABASE_URL and AUTH_SECRET
+npm run db:migrate            # applies migrations to your dev database
 npm run db:seed               # loads clearly-synthetic demo data (see prisma/seed/seed.ts)
 npm run dev
 ```
@@ -143,67 +139,49 @@ Open http://localhost:3000 — you'll be redirected to `/login`.
 `SEED_OWNER_EMAIL`/`SEED_OWNER_PASSWORD` were set to before seeding). Or
 create a brand-new, empty business at `/signup`.
 
+### Database (PostgreSQL on Neon)
+
+This app runs on Postgres end to end — no SQLite fallback. Locally it uses
+[Neon](https://neon.tech) (serverless Postgres, generous free tier), with
+three separate databases under one Neon project so environments never mix:
+
+| Database | Used by |
+|---|---|
+| `<name>` (e.g. `neondb`) | Production (the deployed app) |
+| `<name>_dev` | Local development (`npm run dev`) |
+| `<name>_test` | The automated test suite (`npm test`) |
+
+All three share one Neon project/branch and one Postgres role — only the
+database name in the connection string differs. Any Postgres works here,
+not just Neon (Supabase, RDS, a local `postgres` install, etc.) — Neon is
+simply what this instance is configured against.
+
+To point the app at your own Postgres: set `DATABASE_URL` (app/dev) and
+`TEST_DATABASE_URL` (test suite) in `.env`, then `npm run db:migrate`.
+
 ### Environment variables
 
 See `.env.example`. `DATABASE_URL` and `AUTH_SECRET` are required;
-`ANTHROPIC_API_KEY` is optional (copilot works without it).
-
-### Switching to PostgreSQL
-
-Prisma bakes one SQL dialect into the generated client at `prisma generate`
-time (set by `schema.prisma`'s `datasource.provider`) — there's no runtime
-"detect the DB and pick a dialect" trick, so this is a deliberate one-time
-switch, not a config flag. `@prisma/adapter-pg` and `pg` are already
-installed (`package.json`) so step 3 below is copy-paste, not a new
-install.
-
-1. In `prisma/schema.prisma`, change `provider = "sqlite"` to
-   `provider = "postgresql"` in the `datasource db` block.
-2. Set `DATABASE_URL` to a Postgres connection string (e.g.
-   `postgresql://user:password@host:5432/shoexpress`).
-3. Replace `src/lib/db.ts`'s `createClient()` with:
-
-   ```ts
-   import { PrismaClient } from "@prisma/client";
-   import { PrismaPg } from "@prisma/adapter-pg";
-
-   function createClient() {
-     const connectionString = process.env.DATABASE_URL;
-     if (!connectionString) throw new Error("DATABASE_URL is not set.");
-     const adapter = new PrismaPg({ connectionString });
-     return new PrismaClient({ adapter });
-   }
-   ```
-
-   (This is the same shape as the current SQLite version — only the
-   adapter class and constructor arg change; nothing else in the app
-   references the adapter directly.)
-4. Delete `prisma/migrations/` and run `npx prisma migrate dev --name init`
-   against the new database (SQLite and Postgres migration SQL aren't
-   interchangeable — this schema was never modified in a way that should
-   need it, but a fresh migration is the safe path).
-5. `npx prisma generate` to rebuild the client against the new provider.
-6. Update `scripts/setup-test-db.mjs` similarly if you want the test suite
-   to run against a (throwaway) Postgres database instead of SQLite —
-   not required; SQLite is fine for tests either way.
-
-This hasn't been run against a live Postgres instance in this environment
-(no PostgreSQL server or Docker was available while building) — treat it
-as correct-by-inspection, not verified, until you run it once for real.
+`TEST_DATABASE_URL` is required to run the test suite; `ANTHROPIC_API_KEY`
+is optional (copilot works without it); `CRON_SECRET` guards the
+`/api/cron/recompute` endpoint (see "Scheduled recompute" above).
 
 ### Running tests
 
 ```bash
-npm test          # runs the full suite once (pretest bootstraps a throwaway prisma/test.db)
+npm test          # runs the full suite once (pretest applies migrations to TEST_DATABASE_URL)
 npm run test:watch
 ```
 
-63 tests across 7 files: forecasting engine, stock classification, reorder
-recommendations, inventory ledger recalculation (integration, against a
-real SQLite DB), the import pipeline (mapping/normalization/date-parsing/
-data-quality), product de-duplication (integration), and manual sale/
-purchase entry (integration — ordered-vs-received status transitions,
-cross-business rejection).
+63 tests across 7 files, run against a real Postgres database (not
+mocked): forecasting engine, stock classification, reorder recommendations,
+inventory ledger recalculation (integration), the import pipeline
+(mapping/normalization/date-parsing/data-quality), product de-duplication
+(integration), and manual sale/purchase entry (integration —
+ordered-vs-received status transitions, cross-business rejection). Network
+round-trips to a remote database make these noticeably slower than an
+in-process SQLite suite would be (~2 minutes total) — `testTimeout` is set
+accordingly in `vitest.config.mts`.
 
 ### Other scripts
 
@@ -263,8 +241,29 @@ optional LLM rephrasing second, and the LLM can never touch a number.
 
 ## Deployment
 
-Not deployed anywhere yet. For a real deployment: provision PostgreSQL
-(see "Switching to PostgreSQL"), set `AUTH_SECRET` to a real random value,
-set `NODE_ENV=production`, and run `npm run build && npm start` behind
-HTTPS. A managed Postgres + a platform like Railway/Render/Fly or a VM
-would all work; nothing in this codebase is platform-specific.
+**Vercel (app) + Neon (database) + Render (cron only).** This is a single
+Next.js project — pages and API routes together — so there's no separate
+frontend/backend deploy; Vercel is the native platform for the whole thing.
+
+- **Neon** — the database, see "Database (PostgreSQL on Neon)" above.
+  Production uses its own database, separate from dev/test.
+- **Vercel** — imports the GitHub repo, builds and serves the full app
+  (`next build` / `next start`-equivalent, all `/api/*` routes as
+  serverless functions). Env vars set in the Vercel project: `DATABASE_URL`
+  (Neon production connection string), `AUTH_SECRET`, `CRON_SECRET`, and
+  optionally `ANTHROPIC_API_KEY`. `DISABLE_RECOMPUTE_SCHEDULER=true` is set
+  here too — Vercel's serverless functions don't keep a process alive
+  between requests, so the in-process scheduler (`src/instrumentation.ts`)
+  can't fire reliably there; the HTTP cron endpoint is used instead (next
+  bullet).
+- **Render** — runs no application code. A single Cron Job resource calls
+  the deployed app's `POST /api/cron/recompute` on a schedule
+  (`x-cron-secret` header set to the same `CRON_SECRET`), which is what
+  keeps stock aging/alerts/forecasts fresh in production.
+
+For a different deployment shape (e.g. a single long-running server instead
+of Vercel + a separate cron): set `AUTH_SECRET`/`DATABASE_URL`, leave
+`DISABLE_RECOMPUTE_SCHEDULER` unset, and run `npm run build && npm start`
+behind HTTPS — the in-process scheduler handles recompute on its own then,
+and the Render Cron Job becomes unnecessary. Nothing in the codebase is
+tied to Vercel specifically.

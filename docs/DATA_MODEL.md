@@ -3,14 +3,14 @@
 Full source of truth: `prisma/schema.prisma` (heavily commented). This is a
 summary of the design decisions that aren't obvious from the schema alone.
 
-## Provider: SQLite now, PostgreSQL for production
+## Provider: PostgreSQL (Neon)
 
-See README "Switching to PostgreSQL". The schema avoids anything
-Postgres-specific (no native arrays, no jsonb operators) and avoids Prisma
-`enum` types entirely (SQLite doesn't support them) in favor of `String`
-fields validated by Zod enums in `src/lib/enums.ts`. This also means adding
-a new status value (e.g. a new `AlertType`) never requires a migration —
-just add it to the array in `enums.ts`.
+See README "Database (PostgreSQL on Neon)". The schema still avoids Prisma
+`enum` types entirely — a habit kept from early development against
+SQLite — in favor of `String` fields validated by Zod enums in
+`src/lib/enums.ts`. This means adding a new status value (e.g. a new
+`AlertType`) never requires a migration — just add it to the array in
+`enums.ts`.
 
 ## Inventory is a ledger, not a mutable counter
 
@@ -61,9 +61,10 @@ Every threshold the classification/alert/recommendation engines use
 business (and, via `scopeType`/`scopeId`, per brand or category) in the
 `Setting` table. `src/lib/settings/get.ts` resolves the layered value.
 `Setting.scopeId` uses `""` as a sentinel for "no scope" rather than `NULL`
-— SQLite (and Prisma's generated compound-unique-key type) treats NULL
-specially in unique constraints, so a sentinel keeps
-`(businessId, key, scopeType, scopeId)` uniqueness simple.
+— Postgres (like most databases, and Prisma's generated compound-unique-key
+type) treats NULL specially in unique constraints (two NULLs don't
+conflict), so a sentinel keeps `(businessId, key, scopeType, scopeId)`
+uniqueness simple and predictable.
 
 ## Audit trail
 

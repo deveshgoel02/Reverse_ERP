@@ -1,16 +1,17 @@
 import { PrismaClient } from "@prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 /**
  * Prisma 7 requires an explicit driver adapter (no more implicit
- * datasource-url connection at the client level). Swapping to PostgreSQL in
- * production means swapping this adapter for @prisma/adapter-pg — see
- * README.md "Switching to PostgreSQL".
+ * datasource-url connection at the client level). PostgreSQL (Neon) is the
+ * live datasource — dev/test/production each point at a separate database
+ * on the same Neon project so local work and the test suite never touch
+ * production data. See README.md "Database (PostgreSQL on Neon)".
  */
 function createClient() {
-  const url = process.env.DATABASE_URL ?? "file:./dev.db";
-  const filePath = url.replace(/^file:/, "");
-  const adapter = new PrismaBetterSqlite3({ url: filePath });
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("DATABASE_URL is not set — see .env.example.");
+  const adapter = new PrismaPg({ connectionString });
   return new PrismaClient({ adapter });
 }
 

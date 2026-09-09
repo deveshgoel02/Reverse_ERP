@@ -2,26 +2,21 @@
 // Database schema.
 //
 // PROVIDER NOTE:
-// This schema targets SQLite for local development because no PostgreSQL
-// server or Docker was available in the build environment. The schema is
-// written to be portable to PostgreSQL with a one-line provider change:
-//   - No native Prisma `enum` types are used (SQLite has no real enum
-//     support). Status/type fields are `String`, validated at the
-//     application boundary with Zod (see src/lib/enums.ts). This also
-//     means adding a new status value never requires a migration.
-//   - No Postgres-only column types (arrays, jsonb-specific operators).
-//     JSON blobs use Prisma's `Json` type, which both providers support.
-//   - Decimal is used for money; Int for quantities.
-// To move to production Postgres: change `provider = "sqlite"` below to
-// `"postgresql"`, point DATABASE_URL at the Postgres instance, and re-run
-// `npx prisma migrate dev`. See README.md "Switching to PostgreSQL".
+// PostgreSQL (hosted on Neon — see README "Database (PostgreSQL on Neon)").
+// This schema was originally developed against SQLite (no Postgres server
+// was available at the time) and was written to be portable — no native
+// Prisma `enum` types (status/type fields are `String`, validated at the
+// application boundary with Zod in src/lib/enums.ts, so adding a new status
+// value never needs a migration), no Postgres-only column types. That
+// portability is now historical, not aspirational: the app runs on real
+// Postgres. Decimal is used for money; Int for quantities.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 // ---------------------------------------------------------------------------
