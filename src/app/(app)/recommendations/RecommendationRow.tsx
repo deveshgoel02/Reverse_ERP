@@ -35,9 +35,9 @@ export function RecommendationRow({
   return (
     <Tr>
       <Td className="max-w-xs">
-        <button onClick={() => setExpanded((e) => !e)} className="text-left hover:text-primary">
-          <p className="font-medium text-text">{productLabel}</p>
-          <p className={`text-xs text-text-muted ${expanded ? "" : "line-clamp-1"}`}>{reason}</p>
+        <button onClick={() => setExpanded((e) => !e)} className="block w-full text-left hover:text-primary">
+          <p className="truncate font-medium text-text">{productLabel}</p>
+          <p className={`text-xs text-text-muted ${expanded ? "whitespace-normal" : "truncate"}`}>{reason}</p>
         </button>
       </Td>
       <Td>{type.replace(/_/g, " ")}</Td>
